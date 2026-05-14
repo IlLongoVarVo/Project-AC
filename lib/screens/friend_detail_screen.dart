@@ -17,7 +17,7 @@ class FriendDetailScreen extends StatefulWidget {
 
 class _FriendDetailScreenState extends State<FriendDetailScreen> {
   List<Transaction> _transactions = [];
-  bool _loading = true;
+  bool _loading = false;
   final _currencyFormat = NumberFormat.currency(locale: 'it_IT', symbol: '€');
   final _dateFormat = DateFormat('d MMM yyyy', 'it_IT');
 
@@ -30,7 +30,7 @@ class _FriendDetailScreenState extends State<FriendDetailScreen> {
   Future<void> _loadTransactions() async {
     final provider = context.read<AppProvider>();
     final transactions =
-        await provider.getTransactionsForFriend(widget.friend.id);
+        provider.getTransactionsForFriend(widget.friend.id);
     if (mounted) {
       setState(() {
         _transactions = transactions;

@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:uuid/uuid.dart';
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import '../models/friend.dart';
 import '../models/transaction.dart';
 import '../database/database_helper.dart';
@@ -30,8 +30,8 @@ class AppProvider extends ChangeNotifier {
   Future<void> loadData() async {
     _isLoading = true;
     notifyListeners();
-    _friends = await _db.getFriends();
-    _balances = await _db.getAllBalances();
+    _friends = _db.getFriends();
+    _balances = _db.getAllBalances();
     _isLoading = false;
     notifyListeners();
   }
@@ -63,7 +63,7 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<List<Transaction>> getTransactionsForFriend(String friendId) =>
+  List<Transaction> getTransactionsForFriend(String friendId) =>
       _db.getTransactionsForFriend(friendId);
 
   Future<void> addTransaction({

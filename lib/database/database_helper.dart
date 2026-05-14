@@ -1,115 +1,78 @@
-import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import '../models/friend.dart';
 import '../models/transaction.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._internal();
-  static Database? _database;
-
   DatabaseHelper._internal();
 
-  Future<Database> get database async {
-    _database ??= await _initDatabase();
-    return _database!;
+  static const _friendsBox = 'friends';
+  static const _transactionsBox = 'transactions';
+
+  Future<void> init() async {
+    await Hive.initFlutter();
+    await Hive.openBox<Map>(_friendsBox);
+    await Hive.openBox<Map>(_transactionsBox);
   }
 
-  Future<Database> _initDatabase() async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'friend_debt_tracker.db');
-    return openDatabase(path, version: 1, onCreate: _onCreate);
-  }
-
-  Future<void> _onCreate(Database db, int version) async {
-    await db.execute('''
-      CREATE TABLE friends (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        avatarColorValue INTEGER NOT NULL
-      )
-    ''');
-    await db.execute('''
-      CREATE TABLE transactions (
-        id TEXT PRIMARY KEY,
-        friendId TEXT NOT NULL,
-        amount REAL NOT NULL,
-        type TEXT NOT NULL,
-        description TEXT NOT NULL,
-        date TEXT NOT NULL,
-        FOREIGN KEY (friendId) REFERENCES friends(id) ON DELETE CASCADE
-      )
-    ''');
-  }
+  Box<Map> get _friends => Hive.box<Map>(_friendsBox);
+  Box<Map> get _transactions => Hive.box<Map>(_transactionsBox);
 
   // ── Friends ────────────────────────────────────────────────────────────────
 
-  Future<List<Friend>> getFriends() async {
-    final db = await database;
-    final rows = await db.query('friends', orderBy: 'name ASC');
-    return rows.map(Friend.fromMap).toList();
+  List<Friend> getFriends() {
+    final friends = _friends.values
+        .map((m) => Friend.fromMap(Map<String, dynamic>.from(m)))
+        .toList();
+    friends.sort((a, b) => a.name.compareTo(b.name));
+    return friends;
   }
 
-  Future<void> insertFriend(Friend friend) async {
-    final db = await database;
-    await db.insert('friends', friend.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace);
-  }
+  Future<void> insertFriend(Friend friend) =>
+      _friends.put(friend.id, friend.toMap());
 
-  Future<void> updateFriend(Friend friend) async {
-    final db = await database;
-    await db.update('friends', friend.toMap(),
-        where: 'id = ?', whereArgs: [friend.id]);
-  }
+  Future<void> updateFriend(Friend friend) =>
+      _friends.put(friend.id, friend.toMap());
 
   Future<void> deleteFriend(String id) async {
-    final db = await database;
-    await db.delete('friends', where: 'id = ?', whereArgs: [id]);
-    await db.delete('transactions', where: 'friendId = ?', whereArgs: [id]);
+    await _friends.delete(id);
+    final toDelete = _transactions.keys
+        .where((k) {
+          final t = _transactions.get(k);
+          return t != null && t['friendId'] == id;
+        })
+        .toList();
+    for (final k in toDelete) {
+      await _transactions.delete(k);
+    }
   }
 
   // ── Transactions ───────────────────────────────────────────────────────────
 
-  Future<List<Transaction>> getTransactionsForFriend(String friendId) async {
-    final db = await database;
-    final rows = await db.query(
-      'transactions',
-      where: 'friendId = ?',
-      whereArgs: [friendId],
-      orderBy: 'date DESC',
-    );
-    return rows.map(Transaction.fromMap).toList();
+  List<Transaction> getTransactionsForFriend(String friendId) {
+    final txs = _transactions.values
+        .map((m) => Transaction.fromMap(Map<String, dynamic>.from(m)))
+        .where((t) => t.friendId == friendId)
+        .toList();
+    txs.sort((a, b) => b.date.compareTo(a.date));
+    return txs;
   }
 
-  Future<double> getBalanceForFriend(String friendId) async {
-    final db = await database;
-    final rows = await db.query(
-      'transactions',
-      where: 'friendId = ?',
-      whereArgs: [friendId],
-    );
-    return rows
-        .map(Transaction.fromMap)
-        .fold(0.0, (sum, t) => sum + t.signedAmount);
-  }
+  double getBalanceForFriend(String friendId) =>
+      getTransactionsForFriend(friendId)
+          .fold(0.0, (sum, t) => sum + t.signedAmount);
 
-  Future<Map<String, double>> getAllBalances() async {
-    final db = await database;
-    final rows = await db.query('transactions');
+  Map<String, double> getAllBalances() {
     final Map<String, double> balances = {};
-    for (final t in rows.map(Transaction.fromMap)) {
+    for (final m in _transactions.values) {
+      final t = Transaction.fromMap(Map<String, dynamic>.from(m));
       balances[t.friendId] = (balances[t.friendId] ?? 0.0) + t.signedAmount;
     }
     return balances;
   }
 
-  Future<void> insertTransaction(Transaction transaction) async {
-    final db = await database;
-    await db.insert('transactions', transaction.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace);
-  }
+  Future<void> insertTransaction(Transaction transaction) =>
+      _transactions.put(transaction.id, transaction.toMap());
 
-  Future<void> deleteTransaction(String id) async {
-    final db = await database;
-    await db.delete('transactions', where: 'id = ?', whereArgs: [id]);
-  }
+  Future<void> deleteTransaction(String id) => _transactions.delete(id);
 }
